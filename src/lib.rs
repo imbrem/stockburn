@@ -8,3 +8,9 @@ was based off the [Knet](https://github.com/denizyuret/Knet.jl) machine learning
 #![forbid(missing_docs)]
 
 pub mod data;
+
+/// The floating point type to be used for CPU calculations
+pub type CpuFloat = f64;
+
+/// The floating point type to be used for GPU calculations
+pub type GpuFloat = f32;
