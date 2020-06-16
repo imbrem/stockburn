@@ -1,7 +1,10 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+/*!
+An LSTM for predicting stock prices written in Rust using PyTorch bindings, as an experiment.
+
+Designed to be run on [Polygon](https://polygon.io/) stock data, but also to be modular, extensible and easily modifiable.
+Based off the [Julia](https://julialang.org/) code in the [stock-lstm](https://gitlab.com/tekne/stock-lstm) repository, which
+was based off the [Knet](https://github.com/denizyuret/Knet.jl) machine learning framework.
+*/
+#![forbid(missing_docs)]
+
+pub mod data;
