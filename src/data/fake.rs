@@ -15,11 +15,11 @@ where
     V: TimedGen<Item = Volume>,
 {
     /// The time generator in use
-    pub time_generator: Peekable<D>,
+    pub time_gen: Peekable<D>,
     /// The price generator in use
-    pub price_generator: P,
+    pub price_gen: P,
     /// The volume generator in use
-    pub volume_generator: V,
+    pub volume_gen: V,
 }
 
 /// A volume, number-of-trades pair
@@ -39,14 +39,14 @@ where
     type Item = Tick<DateTime<Utc>, f64>;
     fn next(&mut self) -> Option<Tick<DateTime<Utc>, f64>> {
         use std::cmp::Ordering::*;
-        let old_time = self.time_generator.next()?;
-        let t = *self.time_generator.peek()?;
+        let old_time = self.time_gen.next()?;
+        let t = *self.time_gen.peek()?;
         let dt = t - old_time;
         let prices = [
-            self.price_generator.next_after(dt / 4)?,
-            self.price_generator.next_after(dt / 4)?,
-            self.price_generator.next_after(dt / 4)?,
-            self.price_generator.next_after(dt / 4)?,
+            self.price_gen.next_after(dt / 4)?,
+            self.price_gen.next_after(dt / 4)?,
+            self.price_gen.next_after(dt / 4)?,
+            self.price_gen.next_after(dt / 4)?,
         ];
         let o = prices[0];
         let h = *prices
@@ -59,10 +59,10 @@ where
             .expect("Nonempty");
         let c = prices[3];
         let volumes = [
-            self.volume_generator.next_after(dt / 4)?,
-            self.volume_generator.next_after(dt / 4)?,
-            self.volume_generator.next_after(dt / 4)?,
-            self.volume_generator.next_after(dt / 4)?,
+            self.volume_gen.next_after(dt / 4)?,
+            self.volume_gen.next_after(dt / 4)?,
+            self.volume_gen.next_after(dt / 4)?,
+            self.volume_gen.next_after(dt / 4)?,
         ];
         let v = volumes.iter().map(|v| v.v).sum();
         let mut vw: f64 = volumes
@@ -91,13 +91,11 @@ pub trait TimedGen {
     type Item;
     /// Generate a value, jumping forward a given duration
     fn next_after(&mut self, after: Duration) -> Option<Self::Item>;
-    /// Get the current value
-    fn curr(&self) -> Option<&Self::Item>;
 }
 
-/// Generate fake prices using a time-weighted second-order random walk
+/// Generate numbers using a time-weighted second-order random walk
 #[derive(Debug, Copy, Clone)]
-pub struct DistPrice2<R, P, J> {
+pub struct DistGen2<R, P, J> {
     /// The RNG used by this random walk
     pub rng: R,
     /// The current price
@@ -112,7 +110,7 @@ pub struct DistPrice2<R, P, J> {
     pub jerk: J,
 }
 
-impl<R, P, J> TimedGen for DistPrice2<R, P, J>
+impl<R, P, J> TimedGen for DistGen2<R, P, J>
 where
     R: Rng,
     P: Distribution<f64>,
@@ -129,8 +127,35 @@ where
         self.price += after * self.vel + self.jitter.sample(&mut self.rng);
         Some(self.price)
     }
-    #[inline]
-    fn curr(&self) -> Option<&f64> {
-        Some(&self.price)
+}
+
+/// Generate random volumes by generating random numbers of trades (given a number of seconds),
+/// and then generating random average trade sizes
+pub struct VolumeGen<R, N, A> {
+    /// The RNG used to generate these values
+    pub rng: R,
+    /// The distribution for the average trade size
+    pub average: A,
+    /// The distribution for the average number of trades / second
+    pub no_trades: N,
+}
+
+impl<R, N, A> TimedGen for VolumeGen<R, N, A>
+where
+    R: Rng,
+    N: Distribution<f64>,
+    A: Distribution<f64>,
+{
+    type Item = Volume;
+    fn next_after(&mut self, after: Duration) -> Option<Volume> {
+        let after = after
+            .to_std()
+            .expect("Duration out of bounds!")
+            .as_secs_f64();
+        let no_trades = self.no_trades.sample(&mut self.rng) * after;
+        let volume = no_trades * self.average.sample(&mut self.rng);
+        let n = no_trades.round();
+        let v = if n == 0.0 { 0.0 } else { volume };
+        Some(Volume { v, n })
     }
 }
