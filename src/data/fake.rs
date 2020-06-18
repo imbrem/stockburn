@@ -20,6 +20,8 @@ where
     pub price_gen: P,
     /// The volume generator in use
     pub volume_gen: V,
+    /// The previous closing price
+    pub close: f64
 }
 
 /// A volume, number-of-trades pair
@@ -42,6 +44,25 @@ where
         let old_time = self.time_gen.next()?;
         let t = *self.time_gen.peek()?;
         let dt = t - old_time;
+        let volumes = [
+            self.volume_gen.next_after(dt / 4)?,
+            self.volume_gen.next_after(dt / 4)?,
+            self.volume_gen.next_after(dt / 4)?,
+            self.volume_gen.next_after(dt / 4)?,
+        ];
+        let v = volumes.iter().map(|v| v.v).sum();
+        if v == 0.0 { // Zero volume special case
+            return Some(Tick {
+                t,
+                v,
+                vw: self.close,
+                o: self.close,
+                h: self.close,
+                l: self.close,
+                c: self.close,
+                n: 0.0
+            })
+        }
         let prices = [
             self.price_gen.next_after(dt / 4)?,
             self.price_gen.next_after(dt / 4)?,
@@ -58,13 +79,7 @@ where
             .min_by(|l, r| l.partial_cmp(r).unwrap_or(Greater))
             .expect("Nonempty");
         let c = prices[3];
-        let volumes = [
-            self.volume_gen.next_after(dt / 4)?,
-            self.volume_gen.next_after(dt / 4)?,
-            self.volume_gen.next_after(dt / 4)?,
-            self.volume_gen.next_after(dt / 4)?,
-        ];
-        let v = volumes.iter().map(|v| v.v).sum();
+        self.close = c;
         let mut vw: f64 = volumes
             .iter()
             .zip(prices.iter())
@@ -153,11 +168,8 @@ where
             .to_std()
             .expect("Duration out of bounds!")
             .as_secs_f64();
-        let no_trades = self.no_trades.sample(&mut self.rng) * after;
-        let mut volume = no_trades * self.average.sample(&mut self.rng);
-        if volume < 0.0 {
-            volume = 0.0
-        }
+        let no_trades = self.no_trades.sample(&mut self.rng).max(0.0) * after;
+        let volume = no_trades * self.average.sample(&mut self.rng).max(0.0);
         let n = no_trades.round();
         let v = if n == 0.0 { 0.0 } else { volume };
         Some(Volume { v, n })

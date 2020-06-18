@@ -17,6 +17,7 @@ itertools = "^0.9"
 
 [dev-dependencies]
 rustyline = "^6.2"
+clap = "2.33"
 
 [[example]]
 name = "fakegen"
