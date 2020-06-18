@@ -2,7 +2,7 @@
 Generate fake tick data, for testing purposes
 */
 use super::Tick;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Date, DateTime, Datelike, Duration, TimeZone, Timelike, Utc, Weekday, naive::{NaiveDateTime, NaiveDate}};
 use rand::{distributions::Distribution, Rng};
 use std::iter::Peekable;
 
@@ -131,6 +131,7 @@ where
 
 /// Generate random volumes by generating random numbers of trades (given a number of seconds),
 /// and then generating random average trade sizes
+#[derive(Debug, Copy, Clone)]
 pub struct VolumeGen<R, N, A> {
     /// The RNG used to generate these values
     pub rng: R,
@@ -153,9 +154,85 @@ where
             .expect("Duration out of bounds!")
             .as_secs_f64();
         let no_trades = self.no_trades.sample(&mut self.rng) * after;
-        let volume = no_trades * self.average.sample(&mut self.rng);
+        let mut volume = no_trades * self.average.sample(&mut self.rng);
+        if volume < 0.0 {
+            volume = 0.0
+        }
         let n = no_trades.round();
         let v = if n == 0.0 { 0.0 } else { volume };
         Some(Volume { v, n })
+    }
+}
+
+/// Generate NASDAQ trading days starting at a given date
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+pub struct NASDAQDays(pub Date<Utc>);
+
+/// Check if a naive UTC date is a NASDAQ trading day
+pub fn naive_utc_is_nasdaq_trading_day(date: NaiveDate) -> bool {
+    match date.weekday() {
+        Weekday::Sat => false,
+        Weekday::Sun => false,
+        _ => true,
+    }
+}
+
+/// Check if a date is a NASDAQ trading day
+#[inline]
+pub fn is_nasdaq_trading_day<Tz: TimeZone>(date: Date<Tz>) -> bool {
+    naive_utc_is_nasdaq_trading_day(date.naive_utc())
+}
+
+/// Check if a naive UTC datetime is within NASDAQ trading hours
+#[inline]
+pub fn naitve_utc_is_nasdaq_trading_time(datetime: NaiveDateTime) -> bool {
+    if !naive_utc_is_nasdaq_trading_day(datetime.date()) {
+        return false
+    }
+    match datetime.hour() {
+        14 => datetime.minute() >= 30,
+        15..=20 => true,
+        21 => datetime.minute() == 0,
+        _ => false
+    }
+}
+
+/// Check if a time is within NASDAQ trading hours
+pub fn is_nasdaq_trading_time<Tz: TimeZone>(datetime: DateTime<Tz>) -> bool {
+    naitve_utc_is_nasdaq_trading_time(datetime.naive_utc())
+}
+
+impl Iterator for NASDAQDays {
+    type Item = Date<Utc>;
+    fn next(&mut self) -> Option<Date<Utc>> {
+        while !is_nasdaq_trading_day(self.0) {
+            self.0 = self.0.succ()
+        }
+        let result = self.0;
+        self.0 = self.0.succ();
+        Some(result)
+    }
+}
+
+/// Generate NASDAQ trading minutes on a given date, starting at a given time
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+pub struct NASDAQMinutes(pub DateTime<Utc>);
+
+impl NASDAQMinutes {
+    /// Create a new `NASDAQMinutes` iterator for a given date
+    pub fn for_date(date: Date<Utc>) -> NASDAQMinutes {
+        NASDAQMinutes(date.and_hms(14, 30, 00))
+    }
+}
+
+impl Iterator for NASDAQMinutes {
+    type Item = DateTime<Utc>;
+    fn next(&mut self) -> Option<DateTime<Utc>> {
+        if !is_nasdaq_trading_time(self.0) {
+            return None;
+        }
+        let result = self.0;
+        self.0 = self.0 + Duration::minutes(1);
+        Some(result)
     }
 }
