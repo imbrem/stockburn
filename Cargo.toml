@@ -14,10 +14,12 @@ chrono = { version = "^0.4", features = ["serde"] }
 rand = "^0.7"
 rand_distr = "^0.2"
 itertools = "^0.9"
+csv = "^1.1"
 
 [dev-dependencies]
 rustyline = "^6.2"
-clap = "2.33"
+clap = "^2.33"
+tempfile = "^3.1"
 
 [[example]]
 name = "fakegen"

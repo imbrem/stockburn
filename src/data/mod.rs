@@ -5,11 +5,11 @@ use crate::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-pub mod polygon;
 pub mod fake;
+pub mod polygon;
 
 /// Tick data for a stock
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Tick<D = DateTime<Utc>, F = CpuFloat> {
     /// This tick's timestamp
     pub t: D,

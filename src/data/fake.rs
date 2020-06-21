@@ -2,9 +2,40 @@
 Generate fake tick data, for testing purposes
 */
 use super::Tick;
-use chrono::{Date, DateTime, Datelike, Duration, TimeZone, Timelike, Utc, Weekday, naive::{NaiveDateTime, NaiveDate}};
-use rand::{distributions::Distribution, Rng};
+use chrono::{
+    naive::{NaiveDate, NaiveDateTime},
+    Date, DateTime, Datelike, Duration, TimeZone, Timelike, Utc, Weekday,
+};
+use rand::{distributions::Distribution, Rng, thread_rng};
+use rand_distr::Normal;
 use std::iter::Peekable;
+
+/// Generate decent looking fake tick data using a provided RNG
+pub fn cubic_fake_ticks() -> impl Iterator<Item = Tick> {
+    let price_gen = DistGen2 {
+        rng: thread_rng(),
+        price: 40.0,
+        jitter: Normal::new(0.0, 0.1).unwrap(),
+        vel: 1e-7,
+        acc: 1e-15,
+        jerk: Normal::new(0.0, 1e-19).unwrap(),
+    };
+    let volume_gen = VolumeGen {
+        rng: thread_rng(),
+        average: Normal::new(200.0, 100.0).unwrap(),
+        no_trades: Normal::new(0.03, 0.05).unwrap(),
+    };
+    let time_gen = NASDAQDays(Date::from_utc(NaiveDate::from_ymd(2020, 10, 10), Utc))
+        .map(|date| NASDAQMinutes::for_date(date))
+        .flatten()
+        .peekable();
+    TickGen {
+        price_gen,
+        volume_gen,
+        time_gen,
+        close: 0.0,
+    }
+}
 
 /// Generate tick data using a price generator, volume generator and a time generator
 #[derive(Debug, Clone)]
@@ -21,7 +52,7 @@ where
     /// The volume generator in use
     pub volume_gen: V,
     /// The previous closing price
-    pub close: f64
+    pub close: f64,
 }
 
 /// A volume, number-of-trades pair
@@ -51,7 +82,8 @@ where
             self.volume_gen.next_after(dt / 4)?,
         ];
         let v = volumes.iter().map(|v| v.v).sum();
-        if v == 0.0 { // Zero volume special case
+        if v == 0.0 {
+            // Zero volume special case
             return Some(Tick {
                 t,
                 v,
@@ -60,8 +92,8 @@ where
                 h: self.close,
                 l: self.close,
                 c: self.close,
-                n: 0.0
-            })
+                n: 0.0,
+            });
         }
         let prices = [
             self.price_gen.next_after(dt / 4)?,
@@ -199,13 +231,13 @@ pub fn is_nasdaq_trading_day<Tz: TimeZone>(date: Date<Tz>) -> bool {
 #[inline]
 pub fn naitve_utc_is_nasdaq_trading_time(datetime: NaiveDateTime) -> bool {
     if !naive_utc_is_nasdaq_trading_day(datetime.date()) {
-        return false
+        return false;
     }
     match datetime.hour() {
         14 => datetime.minute() >= 30,
         15..=20 => true,
         21 => datetime.minute() == 0,
-        _ => false
+        _ => false,
     }
 }
 

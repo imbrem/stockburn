@@ -1,10 +1,7 @@
 /*!
 Generate and sample some fake tick data
 */
-use chrono::{naive::NaiveDate, Date, Utc};
 use clap::{App, Arg};
-use rand::thread_rng;
-use rand_distr::Normal;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use stockburn::data::fake::*;
@@ -24,30 +21,7 @@ fn main() {
         )
         .arg(Arg::with_name("no-header").help("Do not output a CSV header"))
         .get_matches();
-
-    let price_gen = DistGen2 {
-        rng: thread_rng(),
-        price: 40.0,
-        jitter: Normal::new(0.0, 0.1).unwrap(),
-        vel: 1e-7,
-        acc: 1e-15,
-        jerk: Normal::new(0.0, 1e-19).unwrap(),
-    };
-    let volume_gen = VolumeGen {
-        rng: thread_rng(),
-        average: Normal::new(200.0, 100.0).unwrap(),
-        no_trades: Normal::new(0.03, 0.05).unwrap(),
-    };
-    let time_gen = NASDAQDays(Date::from_utc(NaiveDate::from_ymd(2020, 10, 10), Utc))
-        .map(|date| NASDAQMinutes::for_date(date))
-        .flatten()
-        .peekable();
-    let mut tick_gen = TickGen {
-        price_gen,
-        volume_gen,
-        time_gen,
-        close: 0.0,
-    };
+    let mut tick_gen = cubic_fake_ticks();
     let mut rl = Editor::<()>::new();
     let n = if let Some(n) = matches.value_of("no-ticks") {
         usize::from_str_radix(&n, 10).expect("Invalid number of ticks!")
