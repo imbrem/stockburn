@@ -4,6 +4,7 @@ Data processing and IO functions
 use crate::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use ta::{Close, High, Low, Open, Volume};
 
 pub mod fake;
 pub mod polygon;
@@ -27,4 +28,39 @@ pub struct Tick<D = DateTime<Utc>, F = CpuFloat> {
     pub l: F,
     /// The number of trades which occured during this tick
     pub n: F,
+}
+
+impl<D, F> Open for Tick<D, F> where F: Copy + Into<f64> {
+    #[inline]
+    fn open(&self) -> f64 {
+        self.o.into()
+    }
+}
+
+impl<D, F> High for Tick<D, F> where F: Copy + Into<f64> {
+    #[inline]
+    fn high(&self) -> f64 {
+        self.h.into()
+    }
+}
+
+impl<D, F> Low for Tick<D, F> where F: Copy + Into<f64> {
+    #[inline]
+    fn low(&self) -> f64 {
+        self.l.into()
+    }
+}
+
+impl<D, F> Close for Tick<D, F> where F: Copy + Into<f64> {
+    #[inline]
+    fn close(&self) -> f64 {
+        self.c.into()
+    }
+}
+
+impl<D, F> Volume for Tick<D, F> where F: Copy + Into<f64> {
+    #[inline]
+    fn volume(&self) -> f64 {
+        self.v.into()
+    }
 }

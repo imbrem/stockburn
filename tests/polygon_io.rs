@@ -6,7 +6,7 @@ use stockburn::data::{fake::*, polygon::*, *};
 use tempfile::tempfile;
 
 #[test]
-fn fake_data_roundtrip() {
+fn fake_data_io_roundtrip() {
     const TEST_DATA_LENGTH: usize = 10000;
     let ticks: Vec<Tick> = cubic_fake_ticks().take(TEST_DATA_LENGTH).collect();
     let mut tmp = tempfile().expect("Tempfile creation should not fail!");

@@ -15,6 +15,7 @@ rand = "^0.7"
 rand_distr = "^0.2"
 itertools = "^0.9"
 csv = "^1.1"
+ta = "^0.1"
 
 [dev-dependencies]
 rustyline = "^6.2"
