@@ -21,6 +21,7 @@ ta = "^0.1"
 rustyline = "^6.2"
 clap = "^2.33"
 tempfile = "^3.1"
+io-enum = "^0.2"
 
 [[example]]
 name = "fakegen"
