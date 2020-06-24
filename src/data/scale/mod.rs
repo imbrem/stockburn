@@ -5,6 +5,7 @@ use super::Tick;
 use crate::{util::to_s, CpuFloat};
 use chrono::{DateTime, Duration, Utc};
 use num::Float;
+use std::fmt::Debug;
 
 /// A window for exponential scaling
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -21,18 +22,33 @@ pub struct ExpScaler<F = CpuFloat> {
 
 /// Clip a value within an absolute value range
 pub fn clip<F: Copy + Float>(value: F, range: F) -> F {
-    value.min(-range).max(range)
+    value.max(-range).min(range)
 }
 
 impl<F> ExpScaler<F>
 where
     F: Copy + Float,
 {
+    /// Create a new exponential scaler with a given starting value
+    #[inline]
+    pub fn start(start: F, average_decay: F, range_decay: F) -> ExpScaler<F> {
+        ExpScaler {
+            average: start,
+            range: F::zero(),
+            average_decay,
+            range_decay
+        }
+    }
     /// Scale a value according to the current window
     #[inline]
     pub fn scale(&self, val: F) -> F {
+        if self.range == F::zero() {
+            return F::zero()
+        }
         let clip_range = self.range + self.range + self.range;
-        clip(val - self.average, clip_range) / self.range
+        let diff = val - self.average;
+        let clipped = clip(diff, clip_range);
+        clipped / self.range
     }
     /// Update a window given a value and a time difference
     #[inline]
@@ -49,6 +65,7 @@ where
 }
 
 /// An exponential scaler for stock market ticks
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct TickExpScaler<F> {
     /// The current time
     pub t: DateTime<Utc>,

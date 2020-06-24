@@ -4,6 +4,7 @@ Load data and scale it exponentially
 use clap::{App, Arg};
 use csv;
 use io_enum::*;
+use scale::*;
 use std::fs::File;
 use std::io::{stdin, Stdin};
 use std::path::Path;
@@ -40,8 +41,22 @@ fn main() {
     } else {
         return;
     };
-    println!("First tick {:?}", first_tick);
-    while let Some(_tick) = ticks.next() {
-        unimplemented!()
+    let mut scaler = TickExpScaler {
+        t: first_tick.t,
+        o: ExpScaler::start(first_tick.o, 0.999, 0.999),
+        h: ExpScaler::start(first_tick.h, 0.999, 0.999),
+        l: ExpScaler::start(first_tick.l, 0.999, 0.999),
+        c: ExpScaler::start(first_tick.c, 0.999, 0.999),
+        v: ExpScaler::start(first_tick.v, 0.999, 0.999),
+        vw: ExpScaler::start(first_tick.vw, 0.999, 0.999),
+        n: ExpScaler::start(first_tick.n, 0.999, 0.999),
+    };
+    println!("t,o,h,l,c,v,vw,n");
+    while let Some(tick) = ticks.next() {
+        let scaled = scaler.tick(tick);
+        println!(
+            "{},{},{},{},{},{},{},{}",
+            scaled.t, scaled.o, scaled.h, scaled.l, scaled.c, scaled.v, scaled.vw, scaled.n
+        );
     }
 }
