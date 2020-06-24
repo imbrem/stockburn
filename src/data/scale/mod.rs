@@ -2,8 +2,8 @@
 Input data scaling
 */
 use super::Tick;
-use crate::{CpuFloat, util::to_s};
-use chrono::{Duration, DateTime, Utc};
+use crate::{util::to_s, CpuFloat};
+use chrono::{DateTime, Duration, Utc};
 use num::Float;
 
 /// A window for exponential scaling
@@ -89,6 +89,7 @@ impl<F> TickExpScaler<F> {
 
 impl<F: Float + Copy> TickExpScaler<F> {
     /// Scale a tick of data
+    #[inline]
     pub fn scale(&self, tick: Tick<DateTime<Utc>, F>) -> Tick<DateTime<Utc>, F> {
         Tick {
             t: tick.t,
@@ -100,5 +101,29 @@ impl<F: Float + Copy> TickExpScaler<F> {
             vw: self.vw.scale(tick.vw),
             n: self.n.scale(tick.n),
         }
+    }
+    /// Update the scaler with a new tick of data
+    #[inline]
+    pub fn update(&mut self, tick: Tick<DateTime<Utc>, F>) {
+        self.update_dt(tick, tick.t - self.t)
+    }
+    /// Update the scaler with a new tick of data, artificially fixing dt
+    #[inline]
+    pub fn update_dt(&mut self, tick: Tick<DateTime<Utc>, F>, dt: Duration) {
+        self.t = tick.t;
+        self.o.update(tick.o, dt);
+        self.c.update(tick.c, dt);
+        self.h.update(tick.h, dt);
+        self.l.update(tick.l, dt);
+        self.v.update(tick.v, dt);
+        self.vw.update(tick.vw, dt);
+        self.n.update(tick.n, dt);
+    }
+    /// Feed a tick into the scaler, and return the scaled tick
+    #[inline]
+    pub fn tick(&mut self, tick: Tick<DateTime<Utc>, F>) -> Tick<DateTime<Utc>, F> {
+        let scaled_tick = self.scale(tick);
+        self.update(tick);
+        scaled_tick
     }
 }
