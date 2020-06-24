@@ -9,6 +9,7 @@ was based off the [Knet](https://github.com/denizyuret/Knet.jl) machine learning
 
 pub mod data;
 pub mod lstm;
+pub mod util;
 
 /// The floating point type to be used for CPU calculations
 pub type CpuFloat = f64;

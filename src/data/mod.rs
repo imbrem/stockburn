@@ -8,6 +8,7 @@ use ta::{Close, High, Low, Open, Volume};
 
 pub mod fake;
 pub mod polygon;
+pub mod scale;
 
 /// Tick data for a stock
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
