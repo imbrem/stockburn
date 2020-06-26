@@ -31,37 +31,78 @@ pub struct Tick<D = DateTime<Utc>, F = CpuFloat> {
     pub n: F,
 }
 
-impl<D, F> Open for Tick<D, F> where F: Copy + Into<f64> {
+impl Tick {
+    /// The number of fields a tick feeds into a neural network. Time is *not* fed in.
+    pub const NN_FIELDS: usize = 7; // (v, vw, o, c, h, l, n)
+}
+
+impl<D, F> Open for Tick<D, F>
+where
+    F: Copy + Into<f64>,
+{
     #[inline]
     fn open(&self) -> f64 {
         self.o.into()
     }
 }
 
-impl<D, F> High for Tick<D, F> where F: Copy + Into<f64> {
+impl<D, F> High for Tick<D, F>
+where
+    F: Copy + Into<f64>,
+{
     #[inline]
     fn high(&self) -> f64 {
         self.h.into()
     }
 }
 
-impl<D, F> Low for Tick<D, F> where F: Copy + Into<f64> {
+impl<D, F> Low for Tick<D, F>
+where
+    F: Copy + Into<f64>,
+{
     #[inline]
     fn low(&self) -> f64 {
         self.l.into()
     }
 }
 
-impl<D, F> Close for Tick<D, F> where F: Copy + Into<f64> {
+impl<D, F> Close for Tick<D, F>
+where
+    F: Copy + Into<f64>,
+{
     #[inline]
     fn close(&self) -> f64 {
         self.c.into()
     }
 }
 
-impl<D, F> Volume for Tick<D, F> where F: Copy + Into<f64> {
+impl<D, F> Volume for Tick<D, F>
+where
+    F: Copy + Into<f64>,
+{
     #[inline]
     fn volume(&self) -> f64 {
         self.v.into()
     }
+}
+
+/// A predicted tick
+pub struct Prediction<F = CpuFloat> {
+    /// Predicted closing price
+    pub c: F,
+}
+
+impl<F> Close for Prediction<F>
+where
+    F: Copy + Into<f64>,
+{
+    #[inline]
+    fn close(&self) -> f64 {
+        self.c.into()
+    }
+}
+
+impl Prediction {
+    /// The number of fields a neural network must predict to yield a tick prediction
+    pub const NN_FIELDS: usize = 1;
 }
