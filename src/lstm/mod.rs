@@ -2,6 +2,9 @@
 The LSTM implementation: a rather direct translation of https://gitlab.com/tekne/stock-lstm
 */
 
+use crate::data::{Prediction, Tick};
+use num::NumCast;
+use std::iter::Peekable;
 use tch::nn::{self, LSTMState, Linear, Module, RNNConfig, VarStore, LSTM, RNN};
 use tch::{Reduction, Tensor};
 
@@ -10,10 +13,10 @@ use tch::{Reduction, Tensor};
 pub struct StockLSTM {
     /// The number of additional inputs
     pub additional_inputs: usize,
+    /// The number of date inputs
+    pub date_inputs: usize,
     /// The number of stock inputs
     pub stock_inputs: usize,
-    /// The number of fields per stock
-    pub field_inputs: usize,
     /// The number of stock outputs
     pub stock_outputs: usize,
     /// The number of fields per prediction
@@ -31,48 +34,122 @@ impl StockLSTM {
         let loss = yhat.mse_loss(ys, Reduction::Sum);
         (loss, state)
     }
-    /// Transform an iterator over a slice of input data and an iterator over iterators over tick data
-    /// into an input tensor
-    pub fn tick_input<'a, II, TI>(&self, mut additional_inputs: II, mut ticks: TI) -> Tensor
+    /// Package a batch of sequences of ticks and additional data into a vector
+    pub fn make_batches<'a, A, DF, I, D, F>(
+        &self,
+        mut additional: A,
+        mut time_func: DF,
+        tick_iterators: &mut [Peekable<I>],
+        batch_size: usize,
+        sequence_length: usize,
+    ) -> Option<(Tensor, Tensor)>
     where
-        II: Iterator<Item = &'a [f32]>,
-        TI: Iterator,
-        TI::Item: Iterator<Item = &'a [f32]>,
+        A: Iterator<Item = &'a [f32]>,
+        I: Iterator<Item = Tick<D, F>>,
+        F: Copy + NumCast,
+        D: Copy + Ord,
+        DF: FnMut(D, &mut Vec<f32>),
     {
-        let size_hint = additional_inputs.size_hint().0.max(ticks.size_hint().0);
-        let cols = self.additional_inputs + self.stock_inputs * self.field_inputs;
-        let capacity = size_hint * cols;
-        let mut data = Vec::<f32>::with_capacity(capacity);
-        let mut i = 0;
-        loop {
-            let (additional_inputs, ticks) = match (additional_inputs.next(), ticks.next()) {
-                (Some(a), Some(t)) => (a, t),
-                (None, None) => break,
-                _ => panic!("Iterator length mismatch at data point {}", i), //TODO: think about this
-            };
-            data.extend_from_slice(additional_inputs);
-            let mut ts = 0;
-            for tick in ticks {
-                assert_eq!(
-                    tick.len(),
-                    self.field_inputs,
-                    "Invalid number of fields for tick {} of data point {}",
-                    ts,
-                    i
-                );
-                data.extend_from_slice(tick);
-                ts += 1;
+        // Step 1: verify basic invariants
+        assert_eq!(
+            tick_iterators.len(),
+            self.stock_inputs,
+            "Wrong number of input stocks!"
+        );
+
+        // Step 2: allocate space
+        let rows = batch_size * sequence_length;
+        let input_features = tick_iterators.len() * Tick::NN_FIELDS + self.additional_inputs;
+        let input_size = rows * input_features;
+        let mut input = Vec::<f32>::with_capacity(input_size);
+        let output_features = tick_iterators.len() * Prediction::NN_FIELDS + self.additional_inputs;
+        let output_size = rows * output_features;
+        let mut output = Vec::<f32>::with_capacity(output_size);
+
+        // Step 3: initialize counters
+        let mut curr_t = tick_iterators
+            .iter_mut()
+            .filter_map(|ticks| ticks.peek().map(|tick| tick.t))
+            .min()?;
+
+        // Step 4: fill in rows
+        for _row in 0..rows {
+            // Step 4.a: fill in additional rows, zero filling on missing
+            if let Some(additional) = additional.next() {
+                let truncate_additional = additional.len().min(self.additional_inputs);
+                input.extend_from_slice(&additional[..truncate_additional]);
+                let additional_fill = self.additional_inputs - truncate_additional;
+                input.extend(std::iter::repeat(0.0).take(additional_fill));
+            } else {
+                input.extend(std::iter::repeat(0.0).take(self.additional_inputs))
             }
-            assert_eq!(
-                ts, self.stock_inputs,
-                "Invalid number of ticks at data point {}",
-                i
-            );
-            i += 1;
+            // Step 4.b: fill in time data
+            time_func(curr_t, &mut input);
+            // Step 4.c: fill in input tick data for the current date, zero filling on missing ticks
+            let mut min_t: Option<D> = None;
+            for ticks in tick_iterators.iter_mut() {
+                if let Some(tick) = ticks.peek() {
+                    // Check the date
+                    if tick.t == curr_t {
+                        // Write the tick, then
+                        tick.push_tick(&mut input);
+                        // Advance the tick iterator
+                        ticks.next();
+                        // Look at the time of the tick after this tick, and if necessary, update the minimum time
+                        if let Some(tick) = ticks.peek() {
+                            if let Some(t) = min_t {
+                                if tick.t < t {
+                                    min_t = Some(tick.t)
+                                }
+                            } else {
+                                min_t = Some(tick.t)
+                            }
+                        }
+                    } else {
+                        // Mismatched time: zero fill without advancing the iterator
+                        input.extend(std::iter::repeat(0.0).take(Tick::NN_FIELDS))
+                    }
+                } else {
+                    // Empty iterator: zero fill
+                    input.extend(std::iter::repeat(0.0).take(Tick::NN_FIELDS))
+                }
+            }
+            // Step 4.d: if any ticks have been filled in, update the minimum time, moving it forwards
+            if let Some(t) = min_t {
+                curr_t = t;
+            }
+            // Step 4.e: fill in output tick data for the current date, zero filling on missing ticks
+            for ticks in tick_iterators.iter_mut() {
+                if let Some(tick) = ticks.peek() {
+                    // Check the date
+                    if tick.t == curr_t {
+                        // Write the prediction associated with the tick
+                        tick.pred().push_pred(&mut output)
+                    } else {
+                        // Mismatched time: zero fill without advancing the iterator
+                        input.extend(std::iter::repeat(0.0).take(Prediction::NN_FIELDS))
+                    }
+                } else {
+                    // Empty iterator: zero fill
+                    input.extend(std::iter::repeat(0.0).take(Prediction::NN_FIELDS))
+                }
+            }
         }
-        // Make a tensor
-        let tensor = Tensor::from(&data[..]);
-        tensor.view([i as i64, cols as i64])
+
+        // Step 5: generate tensors from vectors
+        let input = Tensor::from(&input[..]).view([
+            batch_size as i64,
+            sequence_length as i64,
+            input_features as i64,
+        ]);
+        let output = Tensor::from(&output[..]).view([
+            batch_size as i64,
+            sequence_length as i64,
+            output_features as i64,
+        ]);
+
+        // Return result!
+        return Some((input, output))
     }
 }
 
@@ -101,10 +178,10 @@ impl RNN for StockLSTM {
 pub struct StockLSTMDesc {
     /// The number of additional input neurons
     pub additional_inputs: usize,
+    /// The number of date inputs
+    pub date_inputs: usize,
     /// The number of input stocks
     pub stock_inputs: usize,
-    /// The number of fields per input stock
-    pub field_inputs: usize,
     /// The number of stock prices to predict
     pub stock_outputs: usize,
     /// The number of fields per output stock
@@ -118,7 +195,7 @@ pub struct StockLSTMDesc {
 impl StockLSTMDesc {
     /// Build a `StockLSTM` over a given `VarStore `
     pub fn build(&self, vs: &VarStore) -> StockLSTM {
-        let inputs = self.additional_inputs + self.stock_inputs * self.field_inputs;
+        let inputs = self.additional_inputs + self.stock_inputs * Tick::NN_FIELDS;
         let lstm_layer = nn::lstm(
             &vs.root(),
             inputs as i64,
@@ -140,8 +217,8 @@ impl StockLSTMDesc {
         );
         StockLSTM {
             stock_inputs: self.stock_inputs,
-            field_inputs: self.field_inputs,
             additional_inputs: self.additional_inputs,
+            date_inputs: self.date_inputs,
             stock_outputs: self.stock_outputs,
             prediction_outputs: self.prediction_outputs,
             lstm_layer,
