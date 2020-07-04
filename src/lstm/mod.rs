@@ -403,5 +403,13 @@ mod tests {
             2,
         )
         .unwrap();
+        assert_eq!(
+            input_data.size3().unwrap(),
+            (4, 2, 3 + 1 + 2 * Tick::NN_FIELDS as i64)
+        );
+        assert_eq!(
+            output_data.size3().unwrap(),
+            (4, 2, 2 * Prediction::NN_FIELDS as i64)
+        );
     }
 }
