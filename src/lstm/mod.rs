@@ -15,12 +15,8 @@ pub struct StockLSTM {
     pub additional_inputs: usize,
     /// The number of date inputs
     pub date_inputs: usize,
-    /// The number of stock inputs
-    pub stock_inputs: usize,
-    /// The number of stock outputs
-    pub stock_outputs: usize,
-    /// The number of fields per prediction
-    pub prediction_outputs: usize,
+    /// The number of stocks to predict
+    pub stocks: usize,
     /// This model's LSTM layer
     pub lstm_layer: LSTM,
     /// This model's linear layer
@@ -34,9 +30,10 @@ impl StockLSTM {
         let loss = yhat.mse_loss(ys, Reduction::Sum);
         (loss, state)
     }
-    /// Package a batch of sequences of ticks and additional data into a vector
-    pub fn make_batches<'a, A, DF, I, D, F>(
-        &self,
+    /// Package a batch of sequences of ticks and additional data into tensors
+    fn make_batches_impl<'a, A, DF, I, D, F>(
+        additional_inputs: usize,
+        stocks: usize,
         mut additional: A,
         mut time_func: DF,
         tick_iterators: &mut [Peekable<I>],
@@ -53,16 +50,16 @@ impl StockLSTM {
         // Step 1: verify basic invariants
         assert_eq!(
             tick_iterators.len(),
-            self.stock_inputs,
+            stocks,
             "Wrong number of input stocks!"
         );
 
         // Step 2: allocate space
         let rows = batch_size * sequence_length;
-        let input_features = tick_iterators.len() * Tick::NN_FIELDS + self.additional_inputs;
+        let input_features = tick_iterators.len() * Tick::NN_FIELDS + additional_inputs;
         let input_size = rows * input_features;
         let mut input = Vec::<f32>::with_capacity(input_size);
-        let output_features = tick_iterators.len() * Prediction::NN_FIELDS + self.additional_inputs;
+        let output_features = tick_iterators.len() * Prediction::NN_FIELDS + additional_inputs;
         let output_size = rows * output_features;
         let mut output = Vec::<f32>::with_capacity(output_size);
 
@@ -76,12 +73,12 @@ impl StockLSTM {
         for _row in 0..rows {
             // Step 4.a: fill in additional rows, zero filling on missing
             if let Some(additional) = additional.next() {
-                let truncate_additional = additional.len().min(self.additional_inputs);
+                let truncate_additional = additional.len().min(additional_inputs);
                 input.extend_from_slice(&additional[..truncate_additional]);
-                let additional_fill = self.additional_inputs - truncate_additional;
+                let additional_fill = additional_inputs - truncate_additional;
                 input.extend(std::iter::repeat(0.0).take(additional_fill));
             } else {
-                input.extend(std::iter::repeat(0.0).take(self.additional_inputs))
+                input.extend(std::iter::repeat(0.0).take(additional_inputs))
             }
             // Step 4.b: fill in time data
             time_func(curr_t, &mut input);
@@ -149,7 +146,33 @@ impl StockLSTM {
         ]);
 
         // Return result!
-        return Some((input, output))
+        return Some((input, output));
+    }
+    /// Package a batch of sequences of ticks and additional data into tensors
+    pub fn make_batches<'a, A, DF, I, D, F>(
+        &self,
+        additional: A,
+        time_func: DF,
+        tick_iterators: &mut [Peekable<I>],
+        batch_size: usize,
+        sequence_length: usize,
+    ) -> Option<(Tensor, Tensor)>
+    where
+        A: Iterator<Item = &'a [f32]>,
+        I: Iterator<Item = Tick<D, F>>,
+        F: Copy + NumCast,
+        D: Copy + Ord,
+        DF: FnMut(D, &mut Vec<f32>),
+    {
+        Self::make_batches_impl(
+            self.additional_inputs,
+            self.stocks,
+            additional,
+            time_func,
+            tick_iterators,
+            batch_size,
+            sequence_length,
+        )
     }
 }
 
@@ -180,12 +203,8 @@ pub struct StockLSTMDesc {
     pub additional_inputs: usize,
     /// The number of date inputs
     pub date_inputs: usize,
-    /// The number of input stocks
-    pub stock_inputs: usize,
-    /// The number of stock prices to predict
-    pub stock_outputs: usize,
-    /// The number of fields per output stock
-    pub prediction_outputs: usize,
+    /// The number of stocks to predict
+    pub stocks: usize,
     /// The size of the hidden LSTM layers to use
     pub hidden: usize,
     /// The number of hidden LSTM layers to use
@@ -195,7 +214,7 @@ pub struct StockLSTMDesc {
 impl StockLSTMDesc {
     /// Build a `StockLSTM` over a given `VarStore `
     pub fn build(&self, vs: &VarStore) -> StockLSTM {
-        let inputs = self.additional_inputs + self.stock_inputs * Tick::NN_FIELDS;
+        let inputs = self.additional_inputs + self.stocks * Tick::NN_FIELDS;
         let lstm_layer = nn::lstm(
             &vs.root(),
             inputs as i64,
@@ -212,17 +231,18 @@ impl StockLSTMDesc {
         let linear_layer = nn::linear(
             &vs.root(),
             self.hidden as i64,
-            (self.stock_outputs * self.prediction_outputs) as i64,
+            (self.stocks * Prediction::NN_FIELDS) as i64,
             Default::default(),
         );
         StockLSTM {
-            stock_inputs: self.stock_inputs,
+            stocks: self.stocks,
             additional_inputs: self.additional_inputs,
             date_inputs: self.date_inputs,
-            stock_outputs: self.stock_outputs,
-            prediction_outputs: self.prediction_outputs,
             lstm_layer,
             linear_layer,
         }
     }
 }
+
+#[test]
+fn batch_making_works() {}
