@@ -34,6 +34,7 @@ impl StockLSTM {
     fn make_batches_impl<'a, A, DF, I, D, F>(
         additional_inputs: usize,
         stocks: usize,
+        date_inputs: usize,
         mut additional: A,
         mut time_func: DF,
         tick_iterators: &mut [Peekable<I>],
@@ -56,10 +57,11 @@ impl StockLSTM {
 
         // Step 2: allocate space
         let rows = batch_size * sequence_length;
-        let input_features = tick_iterators.len() * Tick::NN_FIELDS + additional_inputs;
+        let input_features =
+            tick_iterators.len() * Tick::NN_FIELDS + additional_inputs + date_inputs;
         let input_size = rows * input_features;
         let mut input = Vec::<f32>::with_capacity(input_size);
-        let output_features = tick_iterators.len() * Prediction::NN_FIELDS + additional_inputs;
+        let output_features = tick_iterators.len() * Prediction::NN_FIELDS;
         let output_size = rows * output_features;
         let mut output = Vec::<f32>::with_capacity(output_size);
 
@@ -78,7 +80,7 @@ impl StockLSTM {
                 let additional_fill = additional_inputs - truncate_additional;
                 input.extend(std::iter::repeat(0.0).take(additional_fill));
             } else {
-                input.extend(std::iter::repeat(0.0).take(additional_inputs))
+                input.extend(std::iter::repeat(0.0).take(additional_inputs));
             }
             // Step 4.b: fill in time data
             time_func(curr_t, &mut input);
@@ -104,11 +106,11 @@ impl StockLSTM {
                         }
                     } else {
                         // Mismatched time: zero fill without advancing the iterator
-                        input.extend(std::iter::repeat(0.0).take(Tick::NN_FIELDS))
+                        input.extend(std::iter::repeat(0.0).take(Tick::NN_FIELDS));
                     }
                 } else {
                     // Empty iterator: zero fill
-                    input.extend(std::iter::repeat(0.0).take(Tick::NN_FIELDS))
+                    input.extend(std::iter::repeat(0.0).take(Tick::NN_FIELDS));
                 }
             }
             // Step 4.d: if any ticks have been filled in, update the minimum time, moving it forwards
@@ -121,14 +123,14 @@ impl StockLSTM {
                     // Check the date
                     if tick.t == curr_t {
                         // Write the prediction associated with the tick
-                        tick.pred().push_pred(&mut output)
+                        tick.pred().push_pred(&mut output);
                     } else {
                         // Mismatched time: zero fill without advancing the iterator
-                        input.extend(std::iter::repeat(0.0).take(Prediction::NN_FIELDS))
+                        output.extend(std::iter::repeat(0.0).take(Prediction::NN_FIELDS));
                     }
                 } else {
                     // Empty iterator: zero fill
-                    input.extend(std::iter::repeat(0.0).take(Prediction::NN_FIELDS))
+                    output.extend(std::iter::repeat(0.0).take(Prediction::NN_FIELDS));
                 }
             }
         }
@@ -167,6 +169,7 @@ impl StockLSTM {
         Self::make_batches_impl(
             self.additional_inputs,
             self.stocks,
+            self.date_inputs,
             additional,
             time_func,
             tick_iterators,
@@ -244,5 +247,161 @@ impl StockLSTMDesc {
     }
 }
 
-#[test]
-fn batch_making_works() {}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{
+        naive::{NaiveDate, NaiveDateTime, NaiveTime},
+        DateTime, Duration, Timelike, Utc,
+    };
+    /// Test making batches of data
+    #[test]
+    fn batch_making_works() {
+        let t = DateTime::from_utc(
+            NaiveDateTime::new(
+                NaiveDate::from_ymd(2020, 06, 22),
+                NaiveTime::from_hms(22, 59, 33),
+            ),
+            Utc,
+        );
+        let fake_stock_1: &[Tick] = &[
+            Tick {
+                t,
+                o: 40.0,
+                h: 41.0,
+                l: 39.0,
+                c: 40.5,
+                v: 300.0,
+                vw: 39.5,
+                n: 2.0,
+            },
+            Tick {
+                t: t + Duration::minutes(1),
+                o: 40.5,
+                h: 41.5,
+                l: 38.0,
+                c: 40.0,
+                v: 500.0,
+                vw: 40.25,
+                n: 4.0,
+            },
+            Tick {
+                t: t + Duration::minutes(2),
+                o: 40.0,
+                h: 42.0,
+                l: 39.5,
+                c: 40.0,
+                v: 1000.0,
+                vw: 41.25,
+                n: 7.0,
+            },
+            Tick {
+                t: t + Duration::minutes(3),
+                o: 40.0,
+                h: 41.0,
+                l: 39.0,
+                c: 40.5,
+                v: 300.0,
+                vw: 39.5,
+                n: 2.0,
+            },
+            Tick {
+                t: t + Duration::minutes(5),
+                o: 40.5,
+                h: 41.0,
+                l: 39.0,
+                c: 40.0,
+                v: 500.0,
+                vw: 40.5,
+                n: 4.0,
+            },
+        ];
+        let fake_stock_2: &[Tick] = &[
+            Tick {
+                t: t + Duration::minutes(1),
+                o: 30.0,
+                h: 31.0,
+                l: 29.0,
+                c: 30.5,
+                v: 300.0,
+                vw: 39.5,
+                n: 2.0,
+            },
+            Tick {
+                t: t + Duration::minutes(2),
+                o: 30.5,
+                h: 31.5,
+                l: 28.0,
+                c: 30.0,
+                v: 400.0,
+                vw: 40.25,
+                n: 4.0,
+            },
+            Tick {
+                t: t + Duration::minutes(3),
+                o: 30.0,
+                h: 32.0,
+                l: 29.5,
+                c: 30.0,
+                v: 900.0,
+                vw: 31.25,
+                n: 7.0,
+            },
+            Tick {
+                t: t + Duration::minutes(4),
+                o: 30.0,
+                h: 32.0,
+                l: 29.0,
+                c: 30.5,
+                v: 300.0,
+                vw: 39.5,
+                n: 2.0,
+            },
+            Tick {
+                t: t + Duration::minutes(5),
+                o: 30.5,
+                h: 31.0,
+                l: 28.0,
+                c: 30.0,
+                v: 400.0,
+                vw: 40.25,
+                n: 4.0,
+            },
+            Tick {
+                t: t + Duration::minutes(6),
+                o: 30.0,
+                h: 31.0,
+                l: 29.5,
+                c: 30.0,
+                v: 900.0,
+                vw: 31.25,
+                n: 7.0,
+            },
+        ];
+        let fake_stocks = &mut [
+            fake_stock_1.iter().copied().peekable(),
+            fake_stock_2.iter().copied().peekable(),
+        ];
+        let additional_data: &[&[f32]] = &[
+            &[1.0, 2.0, 400.0],
+            &[3.0, 4.0],
+            &[5.0, 6.0],
+            &[7.0, 8.0],
+            &[9.0, 10.0],
+            &[11.0, 12.0],
+            &[13.0, 14.0],
+        ];
+        let time_func = |d: DateTime<Utc>, v: &mut Vec<f32>| v.push(d.minute() as f32);
+        let (input_data, output_data) = StockLSTM::make_batches_impl(
+            3,
+            2,
+            1,
+            additional_data.iter().copied(),
+            time_func,
+            fake_stocks,
+            4,
+            2,
+        )
+        .unwrap();
+    }
+}
