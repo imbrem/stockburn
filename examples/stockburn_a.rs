@@ -8,7 +8,11 @@ use clap::{App, Arg};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::fs::File;
 use std::path::Path;
-use stockburn::data::{clocks, polygon::read_ticks, Tick};
+use stockburn::data::{
+    clocks,
+    polygon::{read_ticks, POLYGON_DATETIME},
+    Tick,
+};
 use stockburn::lstm::StockLSTMDesc;
 use tch::nn::{OptimizerConfig, RNN};
 use tch::{nn, Device};
@@ -38,7 +42,7 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
     for file in input_files {
         input_files_progress.set_message(file);
         let file = File::open(Path::new(file))?;
-        ticks.push(read_ticks(file, None));
+        ticks.push(read_ticks(file, Some(POLYGON_DATETIME)));
         input_files_progress.inc(1);
     }
 
@@ -116,7 +120,7 @@ pub fn main() -> anyhow::Result<()> {
             Arg::with_name("fake")
                 .short("f")
                 .long("fake")
-                .help("A fake input stock")
+                .help("A fake input stock"),
         )
         .get_matches();
 

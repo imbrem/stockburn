@@ -7,6 +7,9 @@ use csv;
 use std::io::{Read, Write};
 use std::str::FromStr;
 
+/// The polygon DateTime format
+pub const POLYGON_DATETIME: &str = "%Y-%m-%d %H:%M:%S";
+
 /// Read polygon tick data from a Reader
 pub fn read_ticks<R: Read>(rdr: R, date_format: Option<&str>) -> Vec<Tick> {
     let date_format = if let Some(format) = date_format {
