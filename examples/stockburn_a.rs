@@ -110,7 +110,7 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
     // Loop over the data
     for epoch in 0..EPOCHS {
         // Initialize LSTM state
-        let mut lstm_state = lstm.zero_state(BATCH_SIZE as i64);
+        let mut lstm_state = lstm.zero_state((BATCH_SIZE * SEQ_LEN) as i64);
 
         // Create data progress bar
         let data_progress = ProgressBar::new(total_ticks as u64);
