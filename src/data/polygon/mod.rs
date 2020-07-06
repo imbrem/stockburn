@@ -9,12 +9,19 @@ use std::io::{Read, Write};
 
 /// Read polygon tick data from a Reader
 pub fn read_ticks<R: Read>(rdr: R, date_format: Option<&str>) -> Vec<Tick> {
+    let date_format = if let Some(format) = date_format {
+        format
+    } else {
+        return deserialize_ticks(rdr)
+            .filter_map(|result| result.ok())
+            .collect();
+    };
     unimplemented!()
 }
 
 /// Deserialize tick data
-pub fn deserialize_ticks<R: Read>(rdr: R) -> Result<Vec<Tick>, csv::Error> {
-    csv::Reader::from_reader(rdr).into_deserialize().collect()
+pub fn deserialize_ticks<R: Read>(rdr: R) -> impl Iterator<Item = Result<Tick, csv::Error>> {
+    csv::Reader::from_reader(rdr).into_deserialize()
 }
 
 /// Write tick data to a Writer
