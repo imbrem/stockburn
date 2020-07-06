@@ -123,6 +123,7 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
             BATCH_SIZE,
             SEQ_LEN,
         ) {
+            println!("Input = {:?}\nOutput = {:?}", input_batch, output_batch);
             let (loss, state) = lstm.loss(&input_batch, &output_batch, &lstm_state);
             lstm_state = state;
             println!("Loss = {:?}", loss)
