@@ -45,6 +45,21 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
         ticks.push(read_ticks(file, Some(POLYGON_DATETIME)));
         input_files_progress.inc(1);
     }
+    let mut empty_count = 0;
+    ticks.retain(|v| {
+        if v.is_empty() {
+            empty_count += 1;
+            false
+        } else {
+            true
+        }
+    });
+    if verbosity >= 1 && empty_count >= 0 {
+        eprintln!(
+            "WARNING: detected {} empty tick vectors, which may have failed to read!",
+            empty_count
+        )
+    }
 
     // Clock function setup
     let (date_inputs, clock_fn) = clocks::<f32>(&[
