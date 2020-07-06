@@ -67,7 +67,7 @@ where
     F: Float + Copy,
 {
     let naive = time.naive_utc();
-    let naive_0 = NaiveDate::from_ymd(2020, 0, 0).and_hms(0, 0, 0);
+    let naive_0 = NaiveDate::from_ymd(2020, 1, 1).and_hms(1, 1, 1);
     let dt = naive - naive_0;
     let dt: F = to_ns(dt);
     let scaled_dt = dt / period;
