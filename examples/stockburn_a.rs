@@ -123,8 +123,9 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
             BATCH_SIZE,
             SEQ_LEN,
         ) {
-            let (output, new_lstm_state) = lstm.seq_init(&input_batch, &lstm_state);
-            lstm_state = new_lstm_state;
+            let (loss, state) = lstm.loss(&input_batch, &output_batch, &lstm_state);
+            lstm_state = state;
+            println!("Loss = {:?}", loss)
         }
 
         // Set the new position of the progress bar
