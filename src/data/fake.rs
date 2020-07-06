@@ -69,8 +69,8 @@ where
     P: TimedGen<Item = f64>,
     V: TimedGen<Item = Volume>,
 {
-    type Item = Tick<DateTime<Utc>, f64>;
-    fn next(&mut self) -> Option<Tick<DateTime<Utc>, f64>> {
+    type Item = Tick<f64>;
+    fn next(&mut self) -> Option<Tick<f64>> {
         use std::cmp::Ordering::*;
         let old_time = self.time_gen.next()?;
         let t = *self.time_gen.peek()?;
@@ -85,7 +85,7 @@ where
         if v == 0.0 {
             // Zero volume special case
             return Some(Tick {
-                t,
+                t: t.naive_utc(),
                 v,
                 vw: self.close,
                 o: self.close,
@@ -120,7 +120,7 @@ where
         vw /= v;
         let n = volumes.iter().map(|v| v.n).sum();
         Some(Tick {
-            t,
+            t: t.naive_utc(),
             o,
             h,
             l,

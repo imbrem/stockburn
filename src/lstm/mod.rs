@@ -3,6 +3,7 @@ The LSTM implementation: a rather direct translation of https://gitlab.com/tekne
 */
 
 use crate::data::{Prediction, Tick};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use num::NumCast;
 use std::iter::Peekable;
 use tch::nn::{self, LSTMState, Linear, Module, RNNConfig, VarStore, LSTM, RNN};
@@ -31,7 +32,7 @@ impl StockLSTM {
         (loss, state)
     }
     /// Package a batch of sequences of ticks and additional data into tensors
-    fn make_batches_impl<'a, A, DF, I, D, F>(
+    fn make_batches_impl<'a, A, DF, I, F>(
         additional_inputs: usize,
         stocks: usize,
         date_inputs: usize,
@@ -43,10 +44,9 @@ impl StockLSTM {
     ) -> Option<(Tensor, Tensor)>
     where
         A: Iterator<Item = &'a [f32]>,
-        I: Iterator<Item = Tick<D, F>>,
+        I: Iterator<Item = Tick<F>>,
         F: Copy + NumCast,
-        D: Copy + Ord,
-        DF: FnMut(D, &mut Vec<f32>),
+        DF: FnMut(DateTime<Utc>, &mut Vec<f32>),
     {
         // Step 1: verify basic invariants
         assert_eq!(
@@ -83,9 +83,9 @@ impl StockLSTM {
                 input.extend(std::iter::repeat(0.0).take(additional_inputs));
             }
             // Step 4.b: fill in time data
-            time_func(curr_t, &mut input);
+            time_func(DateTime::from_utc(curr_t, Utc), &mut input);
             // Step 4.c: fill in input tick data for the current date, zero filling on missing ticks
-            let mut min_t: Option<D> = None;
+            let mut min_t: Option<NaiveDateTime> = None;
             for ticks in tick_iterators.iter_mut() {
                 if let Some(tick) = ticks.peek() {
                     // Check the date
@@ -151,7 +151,7 @@ impl StockLSTM {
         return Some((input, output));
     }
     /// Package a batch of sequences of ticks and additional data into tensors
-    pub fn make_batches<'a, A, DF, I, D, F>(
+    pub fn make_batches<'a, A, DF, I, F>(
         &self,
         additional: A,
         time_func: DF,
@@ -161,10 +161,9 @@ impl StockLSTM {
     ) -> Option<(Tensor, Tensor)>
     where
         A: Iterator<Item = &'a [f32]>,
-        I: Iterator<Item = Tick<D, F>>,
+        I: Iterator<Item = Tick<F>>,
         F: Copy + NumCast,
-        D: Copy + Ord,
-        DF: FnMut(D, &mut Vec<f32>),
+        DF: FnMut(DateTime<Utc>, &mut Vec<f32>),
     {
         Self::make_batches_impl(
             self.additional_inputs,
@@ -257,12 +256,9 @@ mod tests {
     /// Test making batches of data
     #[test]
     fn batch_making_works() {
-        let t = DateTime::from_utc(
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(2020, 06, 22),
-                NaiveTime::from_hms(22, 59, 33),
-            ),
-            Utc,
+        let t = NaiveDateTime::new(
+            NaiveDate::from_ymd(2020, 06, 22),
+            NaiveTime::from_hms(22, 59, 33),
         );
         let fake_stock_1: &[Tick] = &[
             Tick {

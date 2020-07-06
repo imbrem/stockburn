@@ -2,7 +2,7 @@
 Data processing and IO functions
 */
 use crate::*;
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Utc};
 use num::{Float, NumCast};
 use serde::{Deserialize, Serialize};
 use ta::{Close, High, Low, Open, Volume};
@@ -14,9 +14,9 @@ pub mod scale;
 
 /// Tick data for a stock
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct Tick<D = DateTime<Utc>, F = CpuFloat> {
-    /// This tick's timestamp
-    pub t: D,
+pub struct Tick<F = CpuFloat> {
+    /// This tick's timestamp in UTC
+    pub t: NaiveDateTime,
     /// The volume traded this tick
     pub v: F,
     /// The volume weighted average price of this tick
@@ -38,7 +38,7 @@ impl Tick {
     pub const NN_FIELDS: usize = 7; // (v, vw, o, c, h, l, n)
 }
 
-impl<D, F> Tick<D, F>
+impl<F> Tick<F>
 where
     F: Copy + NumCast,
 {
@@ -79,11 +79,15 @@ where
 /// Push a set of clocks, with duration periods
 pub fn clocks<'a, F>(
     durations: &'a [Duration],
-) -> impl FnMut(DateTime<Utc>, &mut Vec<F>) + Send + Sync + Copy + 'a
+) -> (
+    usize,
+    impl FnMut(DateTime<Utc>, &mut Vec<F>) + Send + Sync + Copy + 'a,
+)
 where
     F: Float + Copy + NumCast,
 {
-    move |time, dest| {
+    (
+        durations.len() * 2, move |time, dest| {
         for duration in durations.iter() {
             let tau: F = NumCast::from(2.0 * std::f64::consts::PI).expect("Pi fits in F");
             let duration_ns: F = to_ns(*duration);
@@ -91,9 +95,10 @@ where
             push_clock_period(period, time, dest)
         }
     }
+)
 }
 
-impl<D, F> Open for Tick<D, F>
+impl<F> Open for Tick<F>
 where
     F: Copy + Into<f64>,
 {
@@ -103,7 +108,7 @@ where
     }
 }
 
-impl<D, F> High for Tick<D, F>
+impl<F> High for Tick<F>
 where
     F: Copy + Into<f64>,
 {
@@ -113,7 +118,7 @@ where
     }
 }
 
-impl<D, F> Low for Tick<D, F>
+impl<F> Low for Tick<F>
 where
     F: Copy + Into<f64>,
 {
@@ -123,7 +128,7 @@ where
     }
 }
 
-impl<D, F> Close for Tick<D, F>
+impl<F> Close for Tick<F>
 where
     F: Copy + Into<f64>,
 {
@@ -133,7 +138,7 @@ where
     }
 }
 
-impl<D, F> Volume for Tick<D, F>
+impl<F> Volume for Tick<F>
 where
     F: Copy + Into<f64>,
 {

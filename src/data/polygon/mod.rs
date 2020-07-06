@@ -6,8 +6,11 @@ use csv;
 use std::io::{Read, Write};
 
 /// Read polygon tick data from a Reader
-pub fn read_ticks<R: Read>(rdr: R) -> Result<Vec<Tick>, csv::Error> {
-    csv::Reader::from_reader(rdr).deserialize().collect()
+pub fn read_ticks<R: Read>(rdr: R) -> Vec<Tick> {
+    csv::Reader::from_reader(rdr).deserialize().filter_map(|result| match result {
+        Ok(tick) => Some(tick),
+        Err(err) => { eprintln!("Read error: {:?}", err); None }
+    }).collect()
 }
 
 /// Write tick data to a Writer in polygon CSV format
