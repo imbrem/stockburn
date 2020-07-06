@@ -13,7 +13,7 @@ use stockburn::data::{
     polygon::{read_ticks, POLYGON_DATETIME},
     Tick,
 };
-use stockburn::lstm::StockLSTMDesc;
+use stockburn::lstm::{StockLSTM, StockLSTMDesc};
 use tch::nn::{OptimizerConfig, RNN};
 use tch::{nn, Device};
 
@@ -62,7 +62,7 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
     }
 
     // Clock function setup
-    let (date_inputs, clock_fn) = clocks::<f32>(&[
+    let clock_periods = &[
         Duration::minutes(5),
         Duration::minutes(10),
         Duration::minutes(30),
@@ -71,7 +71,8 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
         Duration::weeks(1),
         Duration::weeks(4),
         Duration::days(365),
-    ]);
+    ];
+    let (date_inputs, clock_fn) = clocks::<f32>(clock_periods);
 
     // Network setup
     if verbosity >= 2 {
@@ -101,14 +102,29 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
     // Loop setup
     let epochs_progress = ProgressBar::new(EPOCHS);
     let total_ticks: usize = ticks.iter().map(|ticks| ticks.len()).sum();
-    let mut tick_iterators: Vec<_> = ticks.iter().map(|ticks| ticks.iter().copied()).collect();
+    let mut tick_iterators: Vec<_> = ticks
+        .iter()
+        .map(|ticks| ticks.iter().copied().peekable())
+        .collect();
 
     // Loop over the data
     for epoch in 0..EPOCHS {
+        // Initialize LSTM state
+        let mut lstm_state = lstm.zero_state(BATCH_SIZE as i64);
+
         // Create data progress bar
         let data_progress = ProgressBar::new(total_ticks as u64);
 
         // Pack a batch of data
+        while let Some((input_batch, output_batch)) = lstm.make_batches(
+            std::iter::repeat(&[][..]),
+            clock_fn,
+            &mut tick_iterators,
+            BATCH_SIZE,
+            SEQ_LEN,
+        ) {
+            let (output, new_lstm_state) = lstm.seq_init(&input_batch, &lstm_state);
+        }
 
         // Set the new position of the progress bar
         let current_pos: usize = tick_iterators.iter().map(|ticks| ticks.len()).sum();
@@ -120,10 +136,10 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
         // Reset iterators
         if epoch == EPOCHS - 1 {
             // Skip reset for last epoch
-            break
+            break;
         }
         for (i, ticks) in ticks.iter().enumerate() {
-            tick_iterators[i] = ticks.iter().copied();
+            tick_iterators[i] = ticks.iter().copied().peekable();
         }
     }
 
