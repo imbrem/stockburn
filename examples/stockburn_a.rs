@@ -98,9 +98,17 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
         eprintln!("Beginning training");
     }
 
+    // Loop setup
     let epochs_progress = ProgressBar::new(EPOCHS);
+    let mut tick_iterators: Vec<_> = ticks.iter().map(|ticks| ticks.iter().copied()).collect();
 
-    for epoch in 0..EPOCHS {}
+    // Loop over the data
+    for epoch in 0..EPOCHS {
+        // Reset iterators
+        for (i, ticks) in ticks.iter().enumerate() {
+            tick_iterators[i] = ticks.iter().copied();
+        }
+    }
 
     Ok(())
 }
