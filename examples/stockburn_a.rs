@@ -116,12 +116,6 @@ pub fn main() -> anyhow::Result<()> {
                 .help("Sets the level of verbosity")
                 .takes_value(true),
         )
-        .arg(
-            Arg::with_name("fake")
-                .short("f")
-                .long("fake")
-                .help("A fake input stock"),
-        )
         .get_matches();
 
     let input_files = matches.values_of_lossy("STOCKS").expect("Required");
