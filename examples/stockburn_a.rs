@@ -100,11 +100,28 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
 
     // Loop setup
     let epochs_progress = ProgressBar::new(EPOCHS);
+    let total_ticks: usize = ticks.iter().map(|ticks| ticks.len()).sum();
     let mut tick_iterators: Vec<_> = ticks.iter().map(|ticks| ticks.iter().copied()).collect();
 
     // Loop over the data
     for epoch in 0..EPOCHS {
+        // Create data progress bar
+        let data_progress = ProgressBar::new(total_ticks as u64);
+
+        // Pack a batch of data
+
+        // Set the new position of the progress bar
+        let current_pos: usize = tick_iterators.iter().map(|ticks| ticks.len()).sum();
+        data_progress.set_position(current_pos as u64);
+
+        // Tick forward the epoch counter
+        epochs_progress.inc(1);
+
         // Reset iterators
+        if epoch == EPOCHS - 1 {
+            // Skip reset for last epoch
+            break
+        }
         for (i, ticks) in ticks.iter().enumerate() {
             tick_iterators[i] = ticks.iter().copied();
         }
