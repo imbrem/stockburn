@@ -42,6 +42,10 @@ where
     /// Scale a value according to the current window
     #[inline]
     pub fn scale(&self, val: F) -> F {
+        // Return 0 for NaN and Inf
+        if val.is_finite() {
+            return F::zero()
+        }
         if self.range == F::zero() {
             return F::zero();
         }
@@ -53,6 +57,10 @@ where
     /// Update a window given a value and a time difference
     #[inline]
     pub fn update(&mut self, val: F, dt: Duration) {
+        // Ignore NaN and Inf
+        if !val.is_finite() {
+            return
+        }
         // Caclulate dt in seconds
         let dt_s: F = to_s(dt);
         // Update range
