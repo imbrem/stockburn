@@ -2,18 +2,22 @@
 [Polygon](https://polygon.io/)-specific data processing code
 */
 use super::Tick;
+use anyhow;
+use chrono::NaiveDateTime;
 use csv;
 use std::io::{Read, Write};
 
 /// Read polygon tick data from a Reader
-pub fn read_ticks<R: Read>(rdr: R) -> Vec<Tick> {
-    csv::Reader::from_reader(rdr).deserialize().filter_map(|result| match result {
-        Ok(tick) => Some(tick),
-        Err(err) => { eprintln!("Read error: {:?}", err); None }
-    }).collect()
+pub fn read_ticks<R: Read>(rdr: R, date_format: Option<&str>) -> Vec<Tick> {
+    unimplemented!()
 }
 
-/// Write tick data to a Writer in polygon CSV format
+/// Deserialize tick data
+pub fn deserialize_ticks<R: Read>(rdr: R) -> Result<Vec<Tick>, csv::Error> {
+    csv::Reader::from_reader(rdr).into_deserialize().collect()
+}
+
+/// Write tick data to a Writer
 /// On success, return how many ticks were written
 pub fn write_ticks<W, I>(wtr: W, ticks: I) -> Result<usize, csv::Error>
 where

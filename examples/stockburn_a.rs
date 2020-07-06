@@ -8,11 +8,10 @@ use clap::{App, Arg};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::fs::File;
 use std::path::Path;
-use std::time::Instant;
 use stockburn::data::{clocks, polygon::read_ticks, Tick};
-use stockburn::lstm::{StockLSTM, StockLSTMDesc};
-use tch::nn::{Linear, Module, OptimizerConfig, LSTM, RNN};
-use tch::{nn, Device, Kind, Tensor};
+use stockburn::lstm::StockLSTMDesc;
+use tch::nn::{OptimizerConfig, RNN};
+use tch::{nn, Device};
 
 const LEARNING_RATE: f64 = 0.01;
 const HIDDEN_SIZE: usize = 256;
@@ -39,7 +38,7 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
     for file in input_files {
         input_files_progress.set_message(file);
         let file = File::open(Path::new(file))?;
-        ticks.push(read_ticks(file));
+        ticks.push(read_ticks(file, None));
         input_files_progress.inc(1);
     }
 
@@ -112,6 +111,12 @@ pub fn main() -> anyhow::Result<()> {
                 .long("verbose")
                 .help("Sets the level of verbosity")
                 .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("fake")
+                .short("f")
+                .long("fake")
+                .help("A fake input stock")
         )
         .get_matches();
 
