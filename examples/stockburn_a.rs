@@ -141,8 +141,9 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
             BATCH_SIZE,
             SEQ_LEN,
         ) {
-            // Reset gradients
-            opt.zero_grad();
+            // Send everything to the GPU
+            let input_batch = input_batch.to_device(device);
+            let output_batch = output_batch.to_device(device);
 
             // Feedforward loss
             let (loss, _state) = lstm.loss(&input_batch, &output_batch, &lstm.zero_state(BATCH_SIZE as i64));
