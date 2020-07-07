@@ -11,13 +11,16 @@ use std::path::Path;
 use stockburn::data::{
     clocks,
     polygon::{read_ticks, POLYGON_DATETIME},
+    scale::TickExpScaler,
     Tick,
 };
-use stockburn::lstm::{StockLSTM, StockLSTMDesc};
+use stockburn::lstm::StockLSTMDesc;
 use tch::nn::{OptimizerConfig, RNN};
 use tch::{nn, Device};
 
 const LEARNING_RATE: f64 = 0.01;
+const AVERAGE_DECAY_RATE: f64 = 0.999;
+const RANGE_DECAY_RATE: f64 = 0.999;
 const HIDDEN_SIZE: usize = 256;
 const LSTM_LAYERS: usize = 2;
 const SEQ_LEN: usize = 180;
@@ -34,32 +37,32 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
     }
 
     // Load input files
-    let input_files_style = ProgressStyle::default_bar()
-        .template("Loading files: {bar:60} {pos:> 7}/{len:7}: {wide_msg}");
+    let input_files_style =
+        ProgressStyle::default_bar().template("Loading files: {wide_bar} {pos}/{len}: {msg:15}");
     let input_files_progress = ProgressBar::new(stocks as u64);
     let mut ticks: Vec<Vec<Tick>> = Vec::new();
+
     input_files_progress.set_style(input_files_style);
-    for file in input_files {
-        input_files_progress.set_message(file);
-        let file = File::open(Path::new(file))?;
-        ticks.push(read_ticks(file, Some(POLYGON_DATETIME)));
+
+    for filename in input_files {
+        input_files_progress.set_message(filename);
+        let file = File::open(Path::new(filename))?;
+        let mut file_ticks = read_ticks(file, Some(POLYGON_DATETIME));
+        if file_ticks.is_empty() {
+            if verbosity >= 1 {
+                eprintln!("WARNING: could not read any ticks from file {}", filename);
+            }
+        } else {
+            let first = file_ticks[0];
+            let mut scaler = TickExpScaler::with_start(first, AVERAGE_DECAY_RATE, RANGE_DECAY_RATE);
+            for tick in file_ticks.iter_mut() {
+                *tick = scaler.tick(*tick);
+            }
+            ticks.push(file_ticks);
+        }
         input_files_progress.inc(1);
     }
-    let mut empty_count = 0;
-    ticks.retain(|v| {
-        if v.is_empty() {
-            empty_count += 1;
-            false
-        } else {
-            true
-        }
-    });
-    if verbosity >= 1 && empty_count >= 0 {
-        eprintln!(
-            "WARNING: detected {} empty tick vectors, which may have failed to read!",
-            empty_count
-        )
-    }
+    input_files_progress.finish_and_clear();
 
     // Clock function setup
     let clock_periods = &[
@@ -101,7 +104,10 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
 
     // Loop setup
     let epochs_progress = ProgressBar::new(EPOCHS);
-    let total_ticks: usize = ticks.iter().map(|ticks| ticks.len()).sum();
+
+    let data_progress_style =
+        ProgressStyle::default_bar().template("{msg:20} {wide_bar} {pos:> 7}/{len:7}");
+
     let mut tick_iterators: Vec<_> = ticks
         .iter()
         .map(|ticks| ticks.iter().copied().peekable())
@@ -110,12 +116,22 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
     // Loop over the data
     for epoch in 0..EPOCHS {
         // Initialize LSTM state
-        let mut lstm_state = lstm.zero_state((BATCH_SIZE * SEQ_LEN) as i64);
+        let mut lstm_state = lstm.zero_state(BATCH_SIZE as i64);
 
-        // Create data progress bar
+        // Tick epoch progress
+        epochs_progress.tick();
+        // Reset data progress
+        let total_ticks: usize = ticks.iter().map(|ticks| ticks.len()).sum();
         let data_progress = ProgressBar::new(total_ticks as u64);
+        data_progress.set_style(data_progress_style.clone());
+        data_progress.set_message("(@0, no loss)");
 
-        // Pack a batch of data
+        let mut batch = 0;
+        let mut sum_loss = 0.0;
+        let mut max_loss = -f64::INFINITY;
+        let mut min_loss = f64::INFINITY;
+
+        // Pack data as batches
         while let Some((input_batch, output_batch)) = lstm.make_batches(
             std::iter::repeat(&[][..]),
             clock_fn,
@@ -123,16 +139,38 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
             BATCH_SIZE,
             SEQ_LEN,
         ) {
-            println!("Input = {:?}\nOutput = {:?}", input_batch, output_batch);
-            let shunted = lstm.seq(&input_batch);
+            // Feedforward loss
+            let (loss, state) = lstm.loss(&input_batch, &output_batch, &lstm_state);
+            lstm_state = state;
+
+            // Optimize
+            opt.backward_step_clip(&loss, 0.5);
+
+            // Advance progress bar, set message
+            batch += 1;
+            let loss = f64::from(loss);
+            sum_loss += loss;
+            max_loss = max_loss.max(loss);
+            min_loss = min_loss.min(loss);
+            let ticks_left: usize = ticks.iter().map(|ticks| ticks.len()).sum();
+            data_progress.set_position(ticks_left as u64);
+            data_progress.set_message(&format!("(@{}, loss = {})", batch, loss));
         }
 
-        // Set the new position of the progress bar
-        let current_pos: usize = tick_iterators.iter().map(|ticks| ticks.len()).sum();
-        data_progress.set_position(current_pos as u64);
+        // Destroy the batch progress bar
+        data_progress.finish_and_clear();
 
         // Tick forward the epoch counter
         epochs_progress.inc(1);
+
+        // Print losses
+        epochs_progress.println(format!(
+            "Epoch {}: average loss = {}, max_loss = {}, min_loss = {}",
+            epoch,
+            sum_loss / batch as f64,
+            max_loss,
+            min_loss
+        ));
 
         // Reset iterators
         if epoch == EPOCHS - 1 {

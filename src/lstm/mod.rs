@@ -25,10 +25,14 @@ pub struct StockLSTM {
 }
 
 impl StockLSTM {
+    /// Compute the number of inputs of this network
+    pub fn no_inputs(&self) -> usize {
+        self.additional_inputs + self.date_inputs + self.stocks * Tick::NN_FIELDS
+    }
     /// Compute the loss on a set of inputs and outputs, modifying LSTM state in the process
     pub fn loss(&self, xs: &Tensor, ys: &Tensor, state: &LSTMState) -> (Tensor, LSTMState) {
         let (yhat, state) = self.seq_init(xs, state);
-        let loss = yhat.mse_loss(ys, Reduction::Sum);
+        let loss = yhat.mse_loss(ys, Reduction::Mean);
         (loss, state)
     }
     /// Package a batch of sequences of ticks and additional data into tensors

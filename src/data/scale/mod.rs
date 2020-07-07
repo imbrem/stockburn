@@ -44,7 +44,7 @@ where
     pub fn scale(&self, val: F) -> F {
         // Return 0 for NaN and Inf
         if val.is_finite() {
-            return F::zero()
+            return F::zero();
         }
         if self.range == F::zero() {
             return F::zero();
@@ -59,7 +59,7 @@ where
     pub fn update(&mut self, val: F, dt: Duration) {
         // Ignore NaN and Inf
         if !val.is_finite() {
-            return
+            return;
         }
         // Caclulate dt in seconds
         let dt_s: F = to_s(dt);
@@ -109,6 +109,29 @@ impl<F> TickExpScaler<F> {
             vw: base.clone(),
             n: base.clone(),
         }
+    }
+    /// Create a scaler with the given starting tick
+    pub fn with_start(tick: Tick<F>, average_decay: F, range_decay: F) -> TickExpScaler<F>
+    where
+        F: Float + Clone,
+    {
+        let mut scaler = TickExpScaler::new(
+            DateTime::from_utc(tick.t, Utc),
+            ExpScaler::start(F::zero(), average_decay, range_decay),
+        );
+        scaler.set_start(tick);
+        scaler
+    }
+    /// Set the starting tick for a tick scaler
+    pub fn set_start(&mut self, tick: Tick<F>) {
+        self.t = tick.t;
+        self.o.average = tick.o;
+        self.h.average = tick.h;
+        self.l.average = tick.l;
+        self.c.average = tick.c;
+        self.v.average = tick.v;
+        self.vw.average = tick.vw;
+        self.n.average = tick.n;
     }
 }
 
