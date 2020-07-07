@@ -216,7 +216,7 @@ pub struct StockLSTMDesc {
 impl StockLSTMDesc {
     /// Build a `StockLSTM` over a given `VarStore `
     pub fn build(&self, vs: &VarStore) -> StockLSTM {
-        let inputs = self.additional_inputs + self.stocks * Tick::NN_FIELDS;
+        let inputs = self.additional_inputs + self.date_inputs + self.stocks * Tick::NN_FIELDS;
         let lstm_layer = nn::lstm(
             &vs.root(),
             inputs as i64,
