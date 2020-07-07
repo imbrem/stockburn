@@ -102,6 +102,9 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
         eprintln!("Beginning training");
     }
 
+    // Get total ticks
+    let total_ticks: usize = ticks.iter().map(|ticks| ticks.len()).sum();
+
     // Loop setup
     let epochs_progress = ProgressBar::new(EPOCHS);
 
@@ -121,7 +124,6 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
         // Tick epoch progress
         epochs_progress.tick();
         // Reset data progress
-        let total_ticks: usize = ticks.iter().map(|ticks| ticks.len()).sum();
         let data_progress = ProgressBar::new(total_ticks as u64);
         data_progress.set_style(data_progress_style.clone());
         data_progress.set_message("(@0, no loss)");
@@ -152,8 +154,8 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
             sum_loss += loss;
             max_loss = max_loss.max(loss);
             min_loss = min_loss.min(loss);
-            let ticks_left: usize = ticks.iter().map(|ticks| ticks.len()).sum();
-            data_progress.set_position(ticks_left as u64);
+            let ticks_left: usize = tick_iterators.iter().map(|ticks| ticks.len()).sum();
+            data_progress.set_position((total_ticks - ticks_left) as u64);
             data_progress.set_message(&format!("(@{}, loss = {})", batch, loss));
         }
 
