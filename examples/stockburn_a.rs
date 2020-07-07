@@ -109,7 +109,7 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
     let epochs_progress = ProgressBar::new(EPOCHS);
 
     let data_progress_style =
-        ProgressStyle::default_bar().template("{msg:20} {wide_bar} {pos:> 7}/{len:7}");
+        ProgressStyle::default_bar().template("[{msg:<15}] {wide_bar} {pos:> 7}/{len:7}");
 
     let mut tick_iterators: Vec<_> = ticks
         .iter()
@@ -119,14 +119,14 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
     // Loop over the data
     for epoch in 0..EPOCHS {
         // Initialize LSTM state
-        let mut lstm_state = lstm.zero_state(BATCH_SIZE as i64);
+        //let mut lstm_state = lstm.zero_state(BATCH_SIZE as i64);
 
         // Tick epoch progress
         epochs_progress.tick();
         // Reset data progress
         let data_progress = ProgressBar::new(total_ticks as u64);
         data_progress.set_style(data_progress_style.clone());
-        data_progress.set_message("(@0, no loss)");
+        data_progress.set_message("no loss");
 
         let mut batch = 0;
         let mut sum_loss = 0.0;
@@ -141,9 +141,12 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
             BATCH_SIZE,
             SEQ_LEN,
         ) {
+            // Reset gradients
+            opt.zero_grad();
+
             // Feedforward loss
-            let (loss, state) = lstm.loss(&input_batch, &output_batch, &lstm_state);
-            lstm_state = state;
+            let (loss, _state) = lstm.loss(&input_batch, &output_batch, &lstm.zero_state(BATCH_SIZE as i64));
+            //lstm_state = state;
 
             // Optimize
             opt.backward_step_clip(&loss, 0.5);
@@ -156,7 +159,7 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
             min_loss = min_loss.min(loss);
             let ticks_left: usize = tick_iterators.iter().map(|ticks| ticks.len()).sum();
             data_progress.set_position((total_ticks - ticks_left) as u64);
-            data_progress.set_message(&format!("(@{}, loss = {})", batch, loss));
+            data_progress.set_message(&format!("loss = {:.5}", loss));
         }
 
         // Destroy the batch progress bar
