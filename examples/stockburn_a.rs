@@ -143,10 +143,13 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
 
     // Loop over the data
     for epoch in 0..EPOCHS {
+
+        // === INITIALIZATION ===
+
+        epochs_progress.println(format!("Epoch {}", epoch));
+
         // === TRAINING ===
 
-        // Tick epoch progress
-        epochs_progress.tick();
         // Reset data progress
         let data_progress = ProgressBar::new(total_training_ticks as u64);
         data_progress.set_style(data_progress_style.clone());
@@ -246,7 +249,7 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
 
         // Print testing losses
         epochs_progress.println(format!(
-            "Epoch {}: average testing loss = {}, max testing loss = {}, min testing loss = {}",
+            "Epoch {}: average testing loss = {}, max testing loss = {}, min testing loss = {}\n",
             epoch,
             sum_loss / batch as f64,
             max_loss,
