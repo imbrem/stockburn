@@ -43,7 +43,7 @@ where
     #[inline]
     pub fn scale(&self, val: F) -> F {
         // Return 0 for NaN and Inf
-        if val.is_finite() {
+        if !val.is_finite() {
             return F::zero();
         }
         if self.range == F::zero() {

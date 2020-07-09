@@ -16,7 +16,7 @@ use stockburn::data::{
 };
 use stockburn::lstm::StockLSTMDesc;
 use tch::nn::{OptimizerConfig, RNN};
-use tch::{nn, Device};
+use tch::{nn, Device, Kind, Reduction};
 
 const LEARNING_RATE: f64 = 0.01;
 const AVERAGE_DECAY_RATE: f64 = 0.999;
@@ -143,7 +143,6 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
 
     // Loop over the data
     for epoch in 0..EPOCHS {
-
         // === INITIALIZATION ===
 
         epochs_progress.println(format!("Epoch {}", epoch));
@@ -199,7 +198,7 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
 
         // Print training losses
         epochs_progress.println(format!(
-            "Training results: average training loss = {}, max training loss = {}, min training loss = {}",
+            "average training loss = {}, max training loss = {}, min training loss = {}",
             sum_loss / batch as f64,
             max_loss,
             min_loss
@@ -216,6 +215,10 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
         let mut sum_loss = 0.0;
         let mut max_loss = -f64::INFINITY;
         let mut min_loss = f64::INFINITY;
+        let mut total_true_positives = 0;
+        let mut total_true_negatives = 0;
+        let mut total_false_positives = 0;
+        let mut total_false_negatives = 0;
 
         while let Some((input_batch, output_batch)) = lstm.make_batches(
             std::iter::repeat(&[][..]),
@@ -227,14 +230,31 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
             // Send everything to the GPU
             let input_batch = input_batch.to_device(device);
             let output_batch = output_batch.to_device(device);
-
+            
             // Feedforward loss
-            let (loss, state) = lstm.loss(&input_batch, &output_batch, &lstm_state);
+            let (output, state) = lstm.seq_init(&input_batch, &lstm_state);
             lstm_state = state;
+
+            let mse_loss = output.mse_loss(&output_batch, Reduction::Sum);
+            let positives = output_batch.gt(0.0);
+            let negatives = positives.logical_not();
+            let predicted_positives = output.gt(0.0);
+            let predicted_negatives = predicted_positives.logical_not();
+            let false_positives = predicted_positives.logical_and(&negatives);
+            let true_negatives = predicted_negatives.logical_and(&negatives);
+            std::mem::drop(negatives);
+            let true_positives = predicted_positives.logical_and(&positives);
+            std::mem::drop(predicted_positives);
+            let false_negatives = predicted_negatives.logical_and(&positives);
+            std::mem::drop(positives);
+            total_true_positives += i64::from(true_positives.sum(Kind::Int64));
+            total_true_negatives += i64::from(true_negatives.sum(Kind::Int64));
+            total_false_positives += i64::from(false_positives.sum(Kind::Int64));
+            total_false_negatives += i64::from(false_negatives.sum(Kind::Int64));
 
             // Advance progress bar, set message
             batch += 1;
-            let loss = f64::from(loss);
+            let loss = f64::from(mse_loss);
             sum_loss += loss;
             max_loss = max_loss.max(loss);
             min_loss = min_loss.min(loss);
@@ -248,10 +268,26 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
 
         // Print testing losses
         epochs_progress.println(format!(
-            "Testing results: average testing loss = {}, max testing loss = {}, min testing loss = {}\n",
+            "average testing loss = {}, max testing loss = {}, min testing loss = {}",
             sum_loss / batch as f64,
             max_loss,
             min_loss
+        ));
+
+        let total_right = total_true_positives + total_true_negatives;
+        let total_wrong = total_false_negatives + total_false_positives;
+
+        epochs_progress.println(format!(
+            "tp = {}, fp = {} (ratio = {}), tn = {}, fn = {} (ratio = {}) ==> right = {}, wrong = {} (ratio = {})",
+            total_true_positives,
+            total_false_positives,
+            total_true_positives as f64 / total_false_positives as f64,
+            total_true_negatives,
+            total_false_negatives,
+            total_true_negatives as f64 / total_false_negatives as f64,
+            total_right,
+            total_wrong,
+            total_right as f64 / total_wrong as f64
         ));
 
         // === CLEANUP ===
