@@ -199,8 +199,7 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
 
         // Print training losses
         epochs_progress.println(format!(
-            "Epoch {}: average training loss = {}, max training loss = {}, min training loss = {}",
-            epoch,
+            "Training results: average training loss = {}, max training loss = {}, min training loss = {}",
             sum_loss / batch as f64,
             max_loss,
             min_loss
@@ -249,8 +248,7 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
 
         // Print testing losses
         epochs_progress.println(format!(
-            "Epoch {}: average testing loss = {}, max testing loss = {}, min testing loss = {}\n",
-            epoch,
+            "Testing results: average testing loss = {}, max testing loss = {}, min testing loss = {}\n",
             sum_loss / batch as f64,
             max_loss,
             min_loss
