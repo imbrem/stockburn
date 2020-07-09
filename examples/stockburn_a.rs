@@ -26,6 +26,24 @@ const LSTM_LAYERS: usize = 2;
 const SEQ_LEN: usize = 180;
 const BATCH_SIZE: usize = 256;
 const EPOCHS: u64 = 100;
+const TRAIN_TEST_RATIO: f64 = 0.95;
+
+pub fn train_test_split(mut ticks: Vec<Vec<Tick>>, ratio: f64) -> (Vec<Vec<Tick>>, Vec<Vec<Tick>>) {
+    let samples: usize = ticks.iter().map(|ticks| ticks.len()).max().unwrap_or(0);
+    let train_samples: usize = (samples as f64 * ratio) as usize;
+    let mut test_samples = Vec::with_capacity(ticks.len());
+    for ticks in ticks.iter() {
+        if ticks.len() <= train_samples {
+            test_samples.push(Vec::new());
+            continue;
+        }
+        test_samples.push(ticks[train_samples..].into());
+    }
+    for ticks in ticks.iter_mut() {
+        ticks.truncate(train_samples)
+    }
+    (ticks, test_samples)
+}
 
 pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> anyhow::Result<()> {
     // Length check for input files
@@ -102,8 +120,11 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
         eprintln!("Beginning training");
     }
 
-    // Get total ticks
-    let total_ticks: usize = ticks.iter().map(|ticks| ticks.len()).sum();
+    let (training_data, testing_data) = train_test_split(ticks, TRAIN_TEST_RATIO);
+
+    // Get tick counts
+    let total_training_ticks: usize = training_data.iter().map(|ticks| ticks.len()).sum();
+    let total_testing_ticks: usize = testing_data.iter().map(|ticks| ticks.len()).sum();
 
     // Loop setup
     let epochs_progress = ProgressBar::new(EPOCHS);
@@ -111,20 +132,23 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
     let data_progress_style =
         ProgressStyle::default_bar().template("[{msg:<15}] {wide_bar} {pos:> 7}/{len:7}");
 
-    let mut tick_iterators: Vec<_> = ticks
+    let mut training_ticks: Vec<_> = training_data
+        .iter()
+        .map(|ticks| ticks.iter().copied().peekable())
+        .collect();
+    let mut testing_ticks: Vec<_> = testing_data
         .iter()
         .map(|ticks| ticks.iter().copied().peekable())
         .collect();
 
     // Loop over the data
     for epoch in 0..EPOCHS {
-        // Initialize LSTM state
-        //let mut lstm_state = lstm.zero_state(BATCH_SIZE as i64);
+        // === TRAINING ===
 
         // Tick epoch progress
         epochs_progress.tick();
         // Reset data progress
-        let data_progress = ProgressBar::new(total_ticks as u64);
+        let data_progress = ProgressBar::new(total_training_ticks as u64);
         data_progress.set_style(data_progress_style.clone());
         data_progress.set_message("no loss");
 
@@ -133,11 +157,11 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
         let mut max_loss = -f64::INFINITY;
         let mut min_loss = f64::INFINITY;
 
-        // Pack data as batches
+        // Pack training data as batches
         while let Some((input_batch, output_batch)) = lstm.make_batches(
             std::iter::repeat(&[][..]),
             clock_fn,
-            &mut tick_iterators,
+            &mut training_ticks,
             BATCH_SIZE,
             SEQ_LEN,
         ) {
@@ -146,7 +170,11 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
             let output_batch = output_batch.to_device(device);
 
             // Feedforward loss
-            let (loss, _state) = lstm.loss(&input_batch, &output_batch, &lstm.zero_state(BATCH_SIZE as i64));
+            let (loss, _state) = lstm.loss(
+                &input_batch,
+                &output_batch,
+                &lstm.zero_state(BATCH_SIZE as i64),
+            );
             //lstm_state = state;
 
             // Optimize
@@ -158,33 +186,88 @@ pub fn run_network(verbosity: usize, input_files: &[String], device: Device) -> 
             sum_loss += loss;
             max_loss = max_loss.max(loss);
             min_loss = min_loss.min(loss);
-            let ticks_left: usize = tick_iterators.iter().map(|ticks| ticks.len()).sum();
-            data_progress.set_position((total_ticks - ticks_left) as u64);
+            let ticks_left: usize = training_ticks.iter().map(|ticks| ticks.len()).sum();
+            data_progress.set_position((total_training_ticks - ticks_left) as u64);
             data_progress.set_message(&format!("loss = {:.5}", loss));
         }
 
         // Destroy the batch progress bar
         data_progress.finish_and_clear();
 
-        // Tick forward the epoch counter
-        epochs_progress.inc(1);
-
-        // Print losses
+        // Print training losses
         epochs_progress.println(format!(
-            "Epoch {}: average loss = {}, max_loss = {}, min_loss = {}",
+            "Epoch {}: average training loss = {}, max training loss = {}, min training loss = {}",
             epoch,
             sum_loss / batch as f64,
             max_loss,
             min_loss
         ));
 
+        // === TESTING ===
+
+        let mut lstm_state = lstm.zero_state(BATCH_SIZE as i64);
+        let data_progress = ProgressBar::new(total_testing_ticks as u64);
+        data_progress.set_style(data_progress_style.clone());
+        data_progress.set_message("no loss");
+
+        let mut batch = 0;
+        let mut sum_loss = 0.0;
+        let mut max_loss = -f64::INFINITY;
+        let mut min_loss = f64::INFINITY;
+
+        while let Some((input_batch, output_batch)) = lstm.make_batches(
+            std::iter::repeat(&[][..]),
+            clock_fn,
+            &mut testing_ticks,
+            BATCH_SIZE,
+            SEQ_LEN,
+        ) {
+            // Send everything to the GPU
+            let input_batch = input_batch.to_device(device);
+            let output_batch = output_batch.to_device(device);
+
+            // Feedforward loss
+            let (loss, state) = lstm.loss(&input_batch, &output_batch, &lstm_state);
+            lstm_state = state;
+
+            // Advance progress bar, set message
+            batch += 1;
+            let loss = f64::from(loss);
+            sum_loss += loss;
+            max_loss = max_loss.max(loss);
+            min_loss = min_loss.min(loss);
+            let ticks_left: usize = testing_ticks.iter().map(|ticks| ticks.len()).sum();
+            data_progress.set_position((total_testing_ticks - ticks_left) as u64);
+            data_progress.set_message(&format!("loss = {:.5}", loss));
+        }
+
+        // Destroy the batch progress bar
+        data_progress.finish_and_clear();
+
+        // Print testing losses
+        epochs_progress.println(format!(
+            "Epoch {}: average testing loss = {}, max testing loss = {}, min testing loss = {}",
+            epoch,
+            sum_loss / batch as f64,
+            max_loss,
+            min_loss
+        ));
+
+        // === CLEANUP ===
+
+        // Tick forward the epoch counter
+        epochs_progress.inc(1);
+
         // Reset iterators
         if epoch == EPOCHS - 1 {
             // Skip reset for last epoch
             break;
         }
-        for (i, ticks) in ticks.iter().enumerate() {
-            tick_iterators[i] = ticks.iter().copied().peekable();
+        for (i, ticks) in training_data.iter().enumerate() {
+            training_ticks[i] = ticks.iter().copied().peekable();
+        }
+        for (i, ticks) in testing_data.iter().enumerate() {
+            testing_ticks[i] = ticks.iter().copied().peekable();
         }
     }
 
